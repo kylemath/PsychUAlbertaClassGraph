@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UAlberta Psychology Course Graph - By Topic</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f8fafc;
+            overflow: hidden;
+        }
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            z-index: 10;
+            width: 320px;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        .control-group label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        input[type=range] {
+            width: 100%;
+            cursor: pointer;
+        }
+        #legend {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e2e8f0;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            font-size: 12px;
+            font-weight: 500;
+            color: #475569;
+        }
+        .legend-color {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            margin-right: 10px;
+            flex-shrink: 0;
+        }
+        
+        svg {
+            width: 100vw;
+            height: 100vh;
+            cursor: grab;
+        }
+        svg:active {
+            cursor: grabbing;
+        }
+        
+        /* Node and Link States */
+        .link {
+            stroke: #cbd5e1;
+            stroke-opacity: 0.6;
+            transition: stroke-width 0.2s, stroke 0.2s, opacity 0.2s;
+        }
+        .node {
+            stroke: #fff;
+            stroke-width: 2px;
+            cursor: pointer;
+            transition: opacity 0.2s, stroke 0.2s, transform 0.2s;
+        }
+        .node:hover {
+            stroke: #0f172a;
+        }
+        
+        .label {
+            font-size: 13px;
+            font-weight: 800;
+            pointer-events: none;
+            /* Heavy white stroke for legibility */
+            text-shadow: 
+                -2px -2px 0 #fff,  
+                 2px -2px 0 #fff,
+                -2px  2px 0 #fff,
+                 2px  2px 0 #fff,
+                 0px  2px 0 #fff,
+                 2px  0px 0 #fff,
+                 0px -2px 0 #fff,
+                -2px  0px 0 #fff,
+                 0px  0px 4px #fff;
+            fill: #0f172a;
+            transition: opacity 0.2s;
+        }
+        
+        .title-label {
+            font-size: 11px;
+            font-weight: 600;
+            fill: #475569;
+            text-shadow: 
+                -2px -2px 0 rgba(255,255,255,0.9),  
+                 2px -2px 0 rgba(255,255,255,0.9),
+                -2px  2px 0 rgba(255,255,255,0.9),
+                 2px  2px 0 rgba(255,255,255,0.9);
+            pointer-events: none;
+            transition: opacity 0.2s;
+        }
+
+        /* Hover / Selected states */
+        .dimmed {
+            opacity: 0.1 !important;
+        }
+        .node.highlighted {
+            stroke: #111;
+            stroke-width: 3px;
+        }
+        .link.highlighted {
+            stroke: #ef4444 !important;
+            stroke-opacity: 1 !important;
+        }
+        .label.highlighted {
+            font-size: 15px;
+            fill: #000;
+            z-index: 999;
+        }
+        
+        #reset-btn {
+            display: none;
+            margin-top: 15px;
+            width: 100%;
+            padding: 10px;
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(239,68,68,0.2);
+            transition: background 0.2s;
+        }
+        #reset-btn:hover {
+            background: #dc2626;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <h3 style="margin-top:0; margin-bottom:5px; color:#0f172a;">PSYCH Topic Map</h3>
+        <p style="font-size:12px; color:#64748b; margin-top: 0; margin-bottom: 20px;">
+            Nodes colored and vertically grouped by tens digit subfield. <b>Click a course</b> to isolate prerequisites.
+        </p>
+        
+        <div class="control-group">
+            <label>
+                <span>Column Spacing (Years)</span>
+                <span id="col-val">300</span>
+            </label>
+            <input type="range" id="col-slider" min="150" max="600" value="300">
+        </div>
+        
+        <div class="control-group">
+            <label>
+                <span>Vertical Split (Topic Area)</span>
+                <span id="sep-val">120</span>
+            </label>
+            <input type="range" id="sep-slider" min="0" max="300" value="120">
+        </div>
+        
+        <div class="control-group">
+            <label>
+                <span>Node Repulsion</span>
+                <span id="rep-val">-500</span>
+            </label>
+            <input type="range" id="rep-slider" min="-1200" max="-100" value="-500" step="50">
+        </div>
+
+        <button id="reset-btn">Reset Selection</button>
+
+        <div id="legend">
+            <!-- Dynamically populated -->
+        </div>
+    </div>
+
+    <svg></svg>
+
+    <script>
+        // COMPREHENSIVE COURSE DATA
+        const rawNodes = [
+            // 100 level (Anchors)
+            { id: "104", title: "Basic Psychological Processes", level: 1, radius: 35 },
+            { id: "105", title: "Individual and Social Behavior", level: 1, radius: 35 },
+            // 200 level
+            { id: "212", title: "Intro to Research Methods", level: 2, radius: 15 },
+            { id: "213", title: "Intro to Data Analysis I", level: 2, radius: 15 },
+            { id: "223", title: "Lifespan Developmental", level: 2, radius: 15 },
+            { id: "239", title: "Abnormal Psychology", level: 2, radius: 15 },
+            { id: "241", title: "Social Psychology", level: 2, radius: 15 },
+            { id: "258", title: "Cognitive Psychology", level: 2, radius: 15 },
+            { id: "275", title: "Brain and Behavior", level: 2, radius: 15 },
+            { id: "282", title: "Behavior Modification", level: 2, radius: 15 },
+            { id: "299", title: "Research Opportunity", level: 2, radius: 15 },
+            // 300 level
+            { id: "300", title: "Honors Seminar I (Arts)", level: 3, radius: 15 },
+            { id: "302", title: "Special Topics in Research", level: 3, radius: 15 },
+            { id: "303", title: "History of Ideas", level: 3, radius: 15 },
+            { id: "304", title: "History of Modern Psych", level: 3, radius: 15 },
+            { id: "305", title: "Special Topics I", level: 3, radius: 15 },
+            { id: "309", title: "Honors Seminar I (Sci)", level: 3, radius: 15 },
+            { id: "313", title: "Data Analysis II", level: 3, radius: 15 },
+            { id: "315", title: "Qualitative Methods", level: 3, radius: 15 },
+            { id: "323", title: "Infant & Child Dev", level: 3, radius: 15 },
+            { id: "325", title: "Applied Research Dev", level: 3, radius: 15 },
+            { id: "327", title: "Adolescent Development", level: 3, radius: 15 },
+            { id: "329", title: "Adult Dev and Aging", level: 3, radius: 15 },
+            { id: "333", title: "Personality Theory", level: 3, radius: 15 },
+            { id: "335", title: "Intro to Clinical", level: 3, radius: 15 },
+            { id: "342", title: "Social Influence", level: 3, radius: 15 },
+            { id: "343", title: "Culture and Cognition", level: 3, radius: 15 },
+            { id: "347", title: "Interpersonal Relationships", level: 3, radius: 15 },
+            { id: "350", title: "Human Memory", level: 3, radius: 15 },
+            { id: "354", title: "Foundations of Cognitive Sci", level: 3, radius: 15 },
+            { id: "356", title: "Research Methods in Cognition", level: 3, radius: 15 },
+            { id: "367", title: "Perception", level: 3, radius: 15 },
+            { id: "371", title: "Neurobiology of Learning", level: 3, radius: 15 },
+            { id: "375", title: "Cognitive Neuroscience", level: 3, radius: 15 },
+            { id: "377", title: "Human Neuropsychology", level: 3, radius: 15 },
+            { id: "381", title: "Principles of Learning", level: 3, radius: 15 },
+            // 400 level
+            { id: "400", title: "Honors Seminar II (Arts)", level: 4, radius: 15 },
+            { id: "405", title: "Special Topics II", level: 4, radius: 15 },
+            { id: "409", title: "Honors Seminar II (Sci)", level: 4, radius: 15 },
+            { id: "413", title: "Design & Analysis of Exp", level: 4, radius: 15 },
+            { id: "415", title: "Qualitative Methods Adv", level: 4, radius: 15 },
+            { id: "423", title: "Advanced Dev Psych", level: 4, radius: 15 },
+            { id: "432", title: "Psychological Assessment", level: 4, radius: 15 },
+            { id: "436", title: "Psych of Self-Estrangement", level: 4, radius: 15 },
+            { id: "443", title: "Social Cognition", level: 4, radius: 15 },
+            { id: "459", title: "Human Aging & Cognition", level: 4, radius: 15 },
+            { id: "475", title: "Adv Cognitive Neuroscience", level: 4, radius: 15 }
+        ];
+
+        // TOPIC CLASSIFICATION (Based on tens digit)
+        const topicConfig = {
+            "General / Special / Ind.": { color: "#94a3b8", yOffset: 0 },
+            "x1x: Methods & Stats":     { color: "#f97316", yOffset: -3 },
+            "x5x: Cognition":           { color: "#0ea5e9", yOffset: -2 },
+            "x6x-x8x: Neuro & Behavior":{ color: "#8b5cf6", yOffset: -1 },
+            "x2x: Developmental":       { color: "#ec4899", yOffset: 1 },
+            "x3x: Clinical & Personality":{ color: "#eab308", yOffset: 2 },
+            "x4x: Social":              { color: "#22c55e", yOffset: 3 }
+        };
+
+        const nodesData = rawNodes.map(d => {
+            const tens = parseInt(d.id.charAt(1));
+            let topicName = "General / Special / Ind.";
+            
+            if (tens === 1) topicName = "x1x: Methods & Stats";
+            else if (tens === 2) topicName = "x2x: Developmental";
+            else if (tens === 3) topicName = "x3x: Clinical & Personality";
+            else if (tens === 4) topicName = "x4x: Social";
+            else if (tens === 5) topicName = "x5x: Cognition";
+            else if (tens >= 6 && tens <= 8) topicName = "x6x-x8x: Neuro & Behavior";
+
+            return { ...d, topic: topicName, yFactor: topicConfig[topicName].yOffset };
+        });
+
+        // POPULATE LEGEND dynamically
+        const legendDiv = document.getElementById("legend");
+        Object.entries(topicConfig).forEach(([name, conf]) => {
+            legendDiv.innerHTML += `
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: ${conf.color};"></div>
+                    <span>${name}</span>
+                </div>
+            `;
+        });
+
+        // PREREQUISITES LINKS
+        const linksData = [
+            { source: "104", target: "212", weight: 2 }, { source: "105", target: "212", weight: 2 },
+            { source: "104", target: "213", weight: 2 }, { source: "105", target: "213", weight: 2 },
+            { source: "105", target: "223", weight: 3 },
+            { source: "105", target: "239", weight: 3 },
+            { source: "105", target: "241", weight: 3 },
+            { source: "104", target: "258", weight: 3 },
+            { source: "104", target: "275", weight: 3 },
+            { source: "104", target: "282", weight: 3 },
+            { source: "104", target: "299", weight: 1 }, { source: "105", target: "299", weight: 1 },
+            { source: "212", target: "313", weight: 2 }, { source: "213", target: "313", weight: 2 },
+            { source: "212", target: "315", weight: 2 }, { source: "213", target: "315", weight: 2 },
+            { source: "223", target: "323", weight: 2 }, { source: "223", target: "325", weight: 2 },
+            { source: "223", target: "327", weight: 2 }, { source: "223", target: "329", weight: 2 },
+            { source: "223", target: "333", weight: 2 }, { source: "239", target: "333", weight: 1 }, { source: "241", target: "333", weight: 1 },
+            { source: "239", target: "335", weight: 3 },
+            { source: "241", target: "342", weight: 2 }, { source: "241", target: "343", weight: 2 }, { source: "241", target: "347", weight: 2 },
+            { source: "258", target: "350", weight: 3 }, { source: "258", target: "354", weight: 2 }, { source: "258", target: "356", weight: 2 },
+            { source: "275", target: "367", weight: 3 }, { source: "275", target: "371", weight: 2 }, { source: "275", target: "375", weight: 3 },
+            { source: "275", target: "377", weight: 2 },
+            { source: "282", target: "381", weight: 3 },
+            { source: "313", target: "413", weight: 2 },
+            { source: "315", target: "415", weight: 2 },
+            { source: "323", target: "423", weight: 2 }, { source: "327", target: "423", weight: 2 },
+            { source: "335", target: "432", weight: 3 }, { source: "335", target: "436", weight: 2 },
+            { source: "342", target: "443", weight: 2 }, { source: "343", target: "443", weight: 2 },
+            { source: "354", target: "459", weight: 2 }, { source: "356", target: "459", weight: 2 },
+            { source: "375", target: "475", weight: 3 }
+        ];
+
+        // SETUP SVG & ZOOM
+        const svg = d3.select("svg");
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const g = svg.append("g");
+
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 3])
+            .on("zoom", (event) => g.attr("transform", event.transform));
+        svg.call(zoom);
+
+        // Center initially, offset to right to dodge menu
+        svg.call(zoom.transform, d3.zoomIdentity.translate(width / 3, height / 2).scale(0.8));
+
+        // ARROWS DEFINITIONS
+        svg.append("defs").append("marker")
+            .attr("id", "arrow")
+            .attr("viewBox", "0 -5 10 10")
+            .attr("refX", 25) 
+            .attr("refY", 0)
+            .attr("markerWidth", 6)
+            .attr("markerHeight", 6)
+            .attr("orient", "auto")
+            .append("path")
+            .attr("fill", "#cbd5e1")
+            .attr("d", "M0,-5L10,0L0,5");
+
+        svg.append("defs").append("marker")
+            .attr("id", "arrow-highlight")
+            .attr("viewBox", "0 -5 10 10")
+            .attr("refX", 25)
+            .attr("refY", 0)
+            .attr("markerWidth", 6)
+            .attr("markerHeight", 6)
+            .attr("orient", "auto")
+            .append("path")
+            .attr("fill", "#ef4444")
+            .attr("d", "M0,-5L10,0L0,5");
+
+        // FORCES CONFIG
+        let colSpacing = 300;
+        let ySeparation = 120;
+        let repulsion = -500;
+
+        const getX = d => (d.level - 1) * colSpacing;
+        // Nodes are pulled to a specific Y-band based on their subfield topic
+        const getY = d => d.yFactor * ySeparation;
+
+        const simulation = d3.forceSimulation(nodesData)
+            .force("link", d3.forceLink(linksData).id(d => d.id).distance(60))
+            .force("charge", d3.forceManyBody().strength(repulsion))
+            .force("x", d3.forceX(getX).strength(1.2))
+            .force("y", d3.forceY(getY).strength(0.8))
+            .force("collide", d3.forceCollide().radius(d => d.radius + 25).iterations(4));
+
+        // DRAW LINKS
+        const link = g.append("g")
+            .selectAll("line")
+            .data(linksData)
+            .enter().append("line")
+            .attr("class", "link")
+            .attr("stroke-width", d => d.weight + 1)
+            .attr("marker-end", "url(#arrow)");
+
+        // DRAW NODES
+        const node = g.append("g")
+            .selectAll("circle")
+            .data(nodesData)
+            .enter().append("circle")
+            .attr("class", "node")
+            .attr("r", d => d.radius)
+            .attr("fill", d => topicConfig[d.topic].color)
+            .call(drag(simulation));
+
+        // DRAW LABELS
+        const labelGroup = g.append("g").attr("class", "labels");
+        
+        const labels = labelGroup.selectAll("text.label")
+            .data(nodesData)
+            .enter().append("text")
+            .attr("class", "label")
+            .attr("text-anchor", "middle")
+            .attr("dy", d => d.radius + 16)
+            .text(d => `PSYCH ${d.id}`);
+
+        const titleLabels = labelGroup.selectAll("text.title-label")
+            .data(nodesData)
+            .enter().append("text")
+            .attr("class", "title-label")
+            .attr("text-anchor", "middle")
+            .attr("dy", d => d.radius + 30)
+            .text(d => d.title);
+
+        // TICK 
+        simulation.on("tick", () => {
+            link
+                .attr("x1", d => d.source.x)
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x)
+                .attr("y2", d => d.target.y);
+            node.attr("cx", d => d.x).attr("cy", d => d.y);
+            labels.attr("x", d => d.x).attr("y", d => d.y);
+            titleLabels.attr("x", d => d.x).attr("y", d => d.y);
+        });
+
+        // INTERACTIVITY
+        const linkedByIndex = {};
+        linksData.forEach(d => { linkedByIndex[`${d.source.id},${d.target.id}`] = true; });
+        function isConnected(a, b) { return linkedByIndex[`${a.id},${b.id}`] || linkedByIndex[`${b.id},${a.id}`] || a.id === b.id; }
+
+        node.on("click", (event, d) => {
+            event.stopPropagation();
+            node.classed("dimmed", n => !isConnected(n, d))
+                .classed("highlighted", n => n.id === d.id);
+            link.classed("dimmed", l => l.source.id !== d.id && l.target.id !== d.id)
+                .classed("highlighted", l => l.source.id === d.id || l.target.id === d.id)
+                .attr("marker-end", l => (l.source.id === d.id || l.target.id === d.id) ? "url(#arrow-highlight)" : "url(#arrow)")
+                .attr("stroke-width", l => (l.source.id === d.id || l.target.id === d.id) ? l.weight + 2 : l.weight + 1);
+            labels.classed("dimmed", n => !isConnected(n, d)).classed("highlighted", n => n.id === d.id);
+            titleLabels.classed("dimmed", n => !isConnected(n, d));
+            document.getElementById("reset-btn").style.display = "block";
+        });
+
+        function resetSelection() {
+            node.classed("dimmed", false).classed("highlighted", false);
+            link.classed("dimmed", false).classed("highlighted", false)
+                .attr("marker-end", "url(#arrow)")
+                .attr("stroke-width", d => d.weight + 1);
+            labels.classed("dimmed", false).classed("highlighted", false);
+            titleLabels.classed("dimmed", false);
+            document.getElementById("reset-btn").style.display = "none";
+        }
+        svg.on("click", resetSelection);
+        document.getElementById("reset-btn").addEventListener("click", resetSelection);
+
+        // SLIDERS
+        d3.select("#col-slider").on("input", function() {
+            colSpacing = +this.value;
+            d3.select("#col-val").text(colSpacing);
+            simulation.force("x", d3.forceX(getX).strength(1.2));
+            simulation.alpha(0.5).restart();
+        });
+
+        d3.select("#sep-slider").on("input", function() {
+            ySeparation = +this.value;
+            d3.select("#sep-val").text(ySeparation);
+            simulation.force("y", d3.forceY(getY).strength(0.8));
+            simulation.alpha(0.5).restart();
+        });
+
+        d3.select("#rep-slider").on("input", function() {
+            repulsion = +this.value;
+            d3.select("#rep-val").text(repulsion);
+            simulation.force("charge", d3.forceManyBody().strength(repulsion));
+            simulation.alpha(0.5).restart();
+        });
+
+        // DRAG
+        function drag(simulation) {
+            return d3.drag()
+                .on("start", (event, d) => {
+                    if (!event.active) simulation.alphaTarget(0.3).restart();
+                    d.fx = d.x; d.fy = d.y;
+                })
+                .on("drag", (event, d) => { d.fx = event.x; d.fy = event.y; })
+                .on("end", (event, d) => {
+                    if (!event.active) simulation.alphaTarget(0);
+                    d.fx = null; d.fy = null;
+                });
+        }
+    </script>
+</body>
+</html>
